@@ -92,9 +92,12 @@ model.fit(
 def custom_input(string):
     input_seq = tokenizer.texts_to_sequences(string)
     input_seq = pad_sequences(input_seq, maxlen=MAX_SEQUENCE_LENGTH)
-    preds = model.predict(input_seq)
-    return preds
+    predicted = model.predict(input_seq)[0]
+    return predicted
 
 take_input = str(input())
-print(custom_input(take_input))
+gt = sum(custom_input(take_input))
+for i, prob in enumerate(custom_input(take_input)):
+    if prob > 0.2*gt:
+        print(possible_labels[i])
 
