@@ -88,7 +88,7 @@ decoder_inputs = pad_sequences(target_sequences_inputs, maxlen=max_len_target, p
 decoder_targets = pad_sequences(target_sequences, maxlen=max_len_target, padding='post')
 
 word2vec = {}
-with open(os.path.join('Glove Data/glove.6B.%sd.txt' % EMBEDDING_DIM),'rb') as f:
+with open(os.path.join('E:\\Misc\\Glove Data/glove.6B.%sd.txt' % EMBEDDING_DIM),'rb') as f:
   for line in f:
     values = line.split()
     word = values[0]
