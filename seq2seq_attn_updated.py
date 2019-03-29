@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Mar 27 00:55:18 2019
-
 @author: tanma
 """
 import tensorflow as tf
@@ -19,7 +17,7 @@ import os
 import time
 import shutil
 
-path_to_file = 'C:\\Users\\tanma.TANMAY-STATION\\Downloads\\spa-eng/spa.txt'
+path_to_file = 'C:\\Users\\tanma.TANMAY-STATION\\Downloads/deu.txt'
 
 class LanguageIndex():
     def __init__(self, lang):
@@ -70,7 +68,7 @@ def load_dataset(path, num_examples):
     output_data = tf.keras.preprocessing.sequence.pad_sequences(output_data, maxlen=max_length_out, padding="post")
     return input_data, output_data, in_lang, out_lang, max_length_in, max_length_out
 
-num_examples = 30000
+num_examples = 20000
 
 input_data, teacher_data, input_lang, target_lang, len_input, len_target = load_dataset(path_to_file, num_examples)
 
@@ -184,7 +182,7 @@ attmodel.compile(optimizer=tf.train.AdamOptimizer(), loss="sparse_categorical_cr
 
 epochs = 20
 atthist = attmodel.fit([input_data, teacher_data], target_data,
-                 batch_size=BATCH_SIZE,
+                 batch_size=64,
                  epochs=epochs,
                  validation_split=0.2)
 
@@ -197,6 +195,8 @@ def sentence_to_vector(sentence, lang):
         vec[i] = w
     return vec
 
+attmodel.save('attn.h5')
+model = tf.keras.models.load_model('attn.h5')
 
 def translate(input_sentence, infenc_model, infmodel, attention=False):
     sv = sentence_to_vector(input_sentence, input_lang)
