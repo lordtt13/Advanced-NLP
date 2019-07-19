@@ -18,13 +18,14 @@ import time
 import shutil
 
 path_to_file = 'C:\\Users\\tanma.TANMAY-STATION\\Downloads/deu.txt'
+path = 'deu.txt'
 
 class LanguageIndex():
     def __init__(self, lang):
         self.lang = lang
         self.word2idx = {}
         self.idx2word = {}
-        self.vocab = set()
+        self.vocab = set()      
         self.create_index()
     def create_index(self):
         for phrase in self.lang:
@@ -70,7 +71,7 @@ def load_dataset(path, num_examples):
 
 num_examples = 20000
 
-input_data, teacher_data, input_lang, target_lang, len_input, len_target = load_dataset(path_to_file, num_examples)
+input_data, teacher_data, input_lang, target_lang, len_input, len_target = load_dataset(path, num_examples)
 
 target_data = [[teacher_data[n][i+1] for i in range(len(teacher_data[n])-1)] for n in range(len(teacher_data))]
 target_data = tf.keras.preprocessing.sequence.pad_sequences(target_data, maxlen=len_target, padding="post")
