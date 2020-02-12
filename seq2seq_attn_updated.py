@@ -2,22 +2,16 @@
 """
 @author: tanma
 """
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, LSTM, Dense, Embedding, CuDNNLSTM, Flatten, TimeDistributed, Dropout, LSTMCell, RNN
-from tensorflow.keras.callbacks import ModelCheckpoint
-from tensorflow.python.keras.utils import tf_utils
-from tensorflow.keras import backend as K
-
 import unicodedata
 import re
 import numpy as np
-import os
-import time
-import shutil
+import tensorflow.compat.v1 as tf
 
-path_to_file = 'C:\\Users\\tanma.TANMAY-STATION\\Downloads/deu.txt'
+from tensorflow.python.keras.utils import tf_utils
+
+
+tf.disable_v2_behavior()
+
 path = 'deu.txt'
 
 class LanguageIndex():
@@ -59,10 +53,10 @@ def create_dataset(path, num_examples):
 
 def load_dataset(path, num_examples):
     pairs = create_dataset(path, num_examples)
-    out_lang = LanguageIndex(hin for en, hin in pairs)
-    in_lang = LanguageIndex(en for en, hin in pairs)
-    input_data = [[in_lang.word2idx[s] for s in en.split(' ')] for en, sp in pairs]
-    output_data = [[out_lang.word2idx[s] for s in sp.split(' ')] for en, sp in pairs]
+    out_lang = LanguageIndex(deu for en, deu, _ in pairs)
+    in_lang = LanguageIndex(en for en, deu, _ in pairs)
+    input_data = [[in_lang.word2idx[s] for s in en.split(' ')] for en, deu, _ in pairs]
+    output_data = [[out_lang.word2idx[s] for s in deu.split(' ')] for en, deu, _ in pairs]
 
     max_length_in, max_length_out = max_length(input_data), max_length(output_data)
     input_data = tf.keras.preprocessing.sequence.pad_sequences(input_data, maxlen=max_length_in, padding="post")
@@ -89,7 +83,7 @@ units = 1024
 vocab_in_size = len(input_lang.word2idx)
 vocab_out_size = len(target_lang.word2idx)
 
-class AttentionLSTMCell(LSTMCell):
+class AttentionLSTMCell(tf.keras.layers.LSTMCell):
     def __init__(self, **kwargs):
         self.attentionMode = False
         super(AttentionLSTMCell, self).__init__(**kwargs)
@@ -97,14 +91,14 @@ class AttentionLSTMCell(LSTMCell):
     @tf_utils.shape_type_conversion
     def build(self, input_shape):        
 
-        self.dense_constant = TimeDistributed(Dense(self.units, name="AttLstmInternal_DenseConstant"))
+        self.dense_constant = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(self.units, name="AttLstmInternal_DenseConstant"))
         
-        self.dense_state = Dense(self.units, name="AttLstmInternal_DenseState")
+        self.dense_state = tf.keras.layers.Dense(self.units, name="AttLstmInternal_DenseState")
         
-        self.dense_transform = Dense(1, name="AttLstmInternal_DenseTransform")
+        self.dense_transform = tf.keras.layers.Dense(1, name="AttLstmInternal_DenseTransform")
 
-        batch, input_dim = input_shape[0]
-        batch, timesteps, context_size = input_shape[-1]
+        batch, input_dim = input_shape[:2]
+        batch, timesteps, context_size = input_shape[0], input_shape[1], input_shape[2]
         lstm_input = (batch, input_dim + context_size)
         
         return super(AttentionLSTMCell, self).build(lstm_input)
@@ -120,24 +114,24 @@ class AttentionLSTMCell(LSTMCell):
     def call(self, inputs, states, constants):
         ytm, stm = states
 
-        stm_repeated = K.repeat(self.dense_state(stm), self.timesteps)
+        stm_repeated = tf.keras.backend.repeat(self.dense_state(stm), self.timesteps)
 
         combined_stm_input = self.dense_transform(
-            keras.activations.relu(stm_repeated + self.input_seq_shaped))
-        score_vector = keras.activations.softmax(combined_stm_input, 1)
+            tf.keras.activations.relu(stm_repeated + self.input_seq_shaped))
+        score_vector = tf.keras.activations.softmax(combined_stm_input, 1)
         
-        context_vector = K.sum(score_vector * self.input_seq, 1)
+        context_vector = tf.keras.backend.sum(score_vector * self.input_seq, 1)
     
-        inputs = K.concatenate([inputs, context_vector])
+        inputs = tf.keras.backend.concatenate([inputs, context_vector])
         
         res = super(AttentionLSTMCell, self).call(inputs=inputs, states=states)
         
         if(self.attentionMode):
-            return (K.reshape(score_vector, (-1, self.timesteps)), res[1])
+            return (tf.keras.backend.reshape(score_vector, (-1, self.timesteps)), res[1])
         else:
             return res
 
-class LSTMWithAttention(RNN):
+class LSTMWithAttention(tf.keras.layers.RNN):
     def __init__(self, units, **kwargs):
         cell = AttentionLSTMCell(units=units)
         self.units = units
@@ -161,24 +155,25 @@ class LSTMWithAttention(RNN):
         return super(LSTMWithAttention, self).call(inputs=x, constants=constants, **kwargs)
 
 
-attenc_inputs = Input(shape=(len_input,), name="attenc_inputs")
-attenc_emb = Embedding(input_dim=vocab_in_size, output_dim=embedding_dim)
-attenc_lstm = CuDNNLSTM(units=units, return_sequences=True, return_state=True)
+attenc_inputs = tf.keras.layers.Input(shape=(len_input,), name="attenc_inputs")
+attenc_emb = tf.keras.layers.Embedding(input_dim=vocab_in_size, output_dim=embedding_dim)
+attenc_lstm = tf.keras.layers.LSTM(units = 128, activation = 'tanh', recurrent_activation = 'sigmoid', recurrent_dropout = 0 , unroll = False, use_bias = True, return_sequences = True, return_state = True)
+# For CuDNN implementation
 attenc_outputs, attstate_h, attstate_c = attenc_lstm(attenc_emb(attenc_inputs))
 attenc_states = [attstate_h, attstate_c]
 
-attdec_inputs = Input(shape=(None,))
-attdec_emb = Embedding(input_dim=vocab_out_size, output_dim=embedding_dim)
+attdec_inputs = tf.keras.layers.Input(shape=(None,))
+attdec_emb = tf.keras.layers.Embedding(input_dim=vocab_out_size, output_dim=embedding_dim)
 attdec_lstm = LSTMWithAttention(units=units, return_sequences=True, return_state=True)
 
 attdec_lstm_out, _, _ = attdec_lstm(inputs=attdec_emb(attdec_inputs), 
                                     constants=attenc_outputs, 
                                     initial_state=attenc_states)
-attdec_d1 = Dense(units, activation="relu")
-attdec_d2 = Dense(vocab_out_size, activation="softmax")
-attdec_out = attdec_d2(Dropout(rate=.4)(attdec_d1(Dropout(rate=.4)(attdec_lstm_out))))
+attdec_d1 = tf.keras.layers.Dense(units, activation="relu")
+attdec_d2 = tf.keras.layers.Dense(vocab_out_size, activation="softmax")
+attdec_out = attdec_d2(tf.keras.layers.Dropout(rate=.4)(attdec_d1(tf.keras.layers.Dropout(rate=.4)(attdec_lstm_out))))
 
-attmodel = Model([attenc_inputs, attdec_inputs], attdec_out)
+attmodel = tf.keras.models.Model([attenc_inputs, attdec_inputs], attdec_out)
 attmodel.compile(optimizer=tf.train.AdamOptimizer(), loss="sparse_categorical_crossentropy", metrics=['sparse_categorical_accuracy'])
 
 epochs = 20
@@ -226,11 +221,11 @@ def translate(input_sentence, infenc_model, infmodel, attention=False):
     return output_sentence
 
 def createAttentionInference(attention_mode=False):
-    attencoder_model = Model(attenc_inputs, [attenc_outputs, attstate_h, attstate_c])
-    state_input_h = Input(shape=(units,), name="state_input_h")
-    state_input_c = Input(shape=(units,), name="state_input_c")
-    attenc_seq_out = Input(shape=attenc_outputs.get_shape()[1:], name="attenc_seq_out")
-    inf_attdec_inputs = Input(shape=(None,), name="inf_attdec_inputs")
+    attencoder_model = tf.keras.models.Model(attenc_inputs, [attenc_outputs, attstate_h, attstate_c])
+    state_input_h = tf.keras.layers.Input(shape=(units,), name="state_input_h")
+    state_input_c = tf.keras.layers.Input(shape=(units,), name="state_input_c")
+    attenc_seq_out = tf.keras.layers.Input(shape=attenc_outputs.get_shape()[1:], name="attenc_seq_out")
+    inf_attdec_inputs = tf.keras.layers.Input(shape=(None,), name="inf_attdec_inputs")
     attdec_lstm.cell.setAttentionMode(attention_mode)
     attdec_res, attdec_h, attdec_c = attdec_lstm(attdec_emb(inf_attdec_inputs), 
                                                  initial_state=[state_input_h, state_input_c], 
@@ -238,10 +233,10 @@ def createAttentionInference(attention_mode=False):
     attinf_model = None
     if not attention_mode:
         inf_attdec_out = attdec_d2(attdec_d1(attdec_res))
-        attinf_model = Model(inputs=[inf_attdec_inputs, state_input_h, state_input_c, attenc_seq_out], 
+        attinf_model = tf.keras.models.Model(inputs=[inf_attdec_inputs, state_input_h, state_input_c, attenc_seq_out], 
                              outputs=[inf_attdec_out, attdec_h, attdec_c])
     else:
-        attinf_model = Model(inputs=[inf_attdec_inputs, state_input_h, state_input_c, attenc_seq_out], 
+        attinf_model = tf.keras.models.Model(inputs=[inf_attdec_inputs, state_input_h, state_input_c, attenc_seq_out], 
                              outputs=[attdec_res, attdec_h, attdec_c])
     return attencoder_model, attinf_model
 
